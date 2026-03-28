@@ -2,8 +2,15 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import date
+import os
 
 st.set_page_config(page_title="AI Personal Finance Advisor", layout="wide")
+
+# -----------------------------
+# File storage
+# -----------------------------
+TRANSACTIONS_FILE = "transactions.csv"
+STATE_FILE = "finance_state.csv"
 
 # -----------------------------
 # Custom dark colorful styling
@@ -156,18 +163,46 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------
+# Persistence helpers
+# -----------------------------
+def load_transactions():
+    if os.path.exists(TRANSACTIONS_FILE):
+        df = pd.read_csv(TRANSACTIONS_FILE)
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"]).dt.date
+        return df
+    return pd.DataFrame(columns=["Date", "Category", "Description", "Amount"])
+
+
+def save_transactions():
+    st.session_state.transactions.to_csv(TRANSACTIONS_FILE, index=False)
+
+
+def load_state():
+    if os.path.exists(STATE_FILE):
+        df = pd.read_csv(STATE_FILE)
+        if not df.empty:
+            return float(df.loc[0, "total_balance"]), float(df.loc[0, "savings"])
+    return 0.0, 0.0
+
+
+def save_state():
+    pd.DataFrame([{
+        "total_balance": st.session_state.total_balance,
+        "savings": st.session_state.savings
+    }]).to_csv(STATE_FILE, index=False)
+
+
+# -----------------------------
 # Session state initialization
 # -----------------------------
 if "transactions" not in st.session_state:
-    st.session_state.transactions = pd.DataFrame(
-        columns=["Date", "Category", "Description", "Amount"]
-    )
+    st.session_state.transactions = load_transactions()
 
-if "total_balance" not in st.session_state:
-    st.session_state.total_balance = 0.0
-
-if "savings" not in st.session_state:
-    st.session_state.savings = 0.0
+if "total_balance" not in st.session_state or "savings" not in st.session_state:
+    total_balance_loaded, savings_loaded = load_state()
+    st.session_state.total_balance = total_balance_loaded
+    st.session_state.savings = savings_loaded
 
 # -----------------------------
 # Helper functions
@@ -238,6 +273,9 @@ def reset_all_data():
     )
     st.session_state.total_balance = 0.0
     st.session_state.savings = 0.0
+
+    save_transactions()
+    save_state()
 
 
 # -----------------------------
@@ -366,6 +404,7 @@ elif page == "Add Money":
 
             st.session_state.total_balance += new_amount
             st.session_state.savings += savings_part
+            save_state()
 
             st.success(
                 f"₹{new_amount:.2f} added successfully. ₹{savings_part:.2f} moved to savings and ₹{spending_part:.2f} kept for spending."
@@ -415,6 +454,7 @@ elif page == "Add Expense":
                     [st.session_state.transactions, new_row],
                     ignore_index=True
                 )
+                save_transactions()
                 st.success("Expense added successfully.")
 
     st.markdown(
