@@ -13,40 +13,46 @@ if "transactions" not in st.session_state:
         columns=["Date", "Category", "Description", "Amount"]
     )
 
-if "monthly_budget" not in st.session_state:
-    st.session_state.monthly_budget = 10000.0
+if "total_balance" not in st.session_state:
+    st.session_state.total_balance = 20000.0
+
+if "savings_target" not in st.session_state:
+    st.session_state.savings_target = 5000.0
 
 # -----------------------------
 # Helper functions
 # -----------------------------
-def calculate_summary(df: pd.DataFrame, budget: float):
+def calculate_summary(df: pd.DataFrame, total_balance: float, savings_target: float):
     if df.empty:
         total_expense = 0.0
     else:
         total_expense = float(df["Amount"].sum())
 
-    savings = max(budget - total_expense, 0)
-    balance = budget - total_expense
-    return total_expense, savings, balance
+    available_for_spending = total_balance - savings_target
+    current_balance = total_balance - total_expense
+    remaining_spending_money = available_for_spending - total_expense
+
+    return total_expense, available_for_spending, current_balance, remaining_spending_money
 
 
-def generate_ai_insights(df: pd.DataFrame, budget: float):
+def generate_ai_insights(df: pd.DataFrame, total_balance: float, savings_target: float):
     insights = []
 
     if df.empty:
         return [
             "No transactions added yet. Start by adding your daily expenses.",
-            "Track spending regularly to get personalized financial insights.",
+            "Track spending regularly to get personalized financial insights."
         ]
 
     total_expense = float(df["Amount"].sum())
+    available_for_spending = total_balance - savings_target
 
     category_totals = df.groupby("Category")["Amount"].sum().sort_values(ascending=False)
 
-    if total_expense > budget:
-        insights.append("⚠️ You have exceeded your monthly budget.")
-    elif total_expense > 0.8 * budget:
-        insights.append("⚠️ You are close to your monthly budget limit.")
+    if total_expense > available_for_spending:
+        insights.append("⚠️ You have exceeded the amount available for spending after keeping savings aside.")
+    elif total_expense > 0.8 * available_for_spending:
+        insights.append("⚠️ You are close to your spending limit.")
     else:
         insights.append("✅ Your spending is currently under control.")
 
@@ -64,19 +70,15 @@ def generate_ai_insights(df: pd.DataFrame, budget: float):
                 f"💡 You are spending a large share of your money on **{top_category}**. Consider reducing it."
             )
 
-    avg_daily = 0
-    if not df.empty:
-        unique_days = df["Date"].nunique()
-        if unique_days > 0:
-            avg_daily = total_expense / unique_days
-
+    unique_days = df["Date"].nunique()
+    avg_daily = total_expense / unique_days if unique_days > 0 else 0
     insights.append(f"📊 Your average daily spending is **₹{avg_daily:.2f}**.")
 
-    remaining = budget - total_expense
+    remaining = available_for_spending - total_expense
     if remaining > 0:
-        insights.append(f"💰 You can still save **₹{remaining:.2f}** this month if you control spending.")
+        insights.append(f"💰 You still have **₹{remaining:.2f}** left for spending after protecting savings.")
     else:
-        insights.append("🚨 Your balance is negative. Try cutting optional expenses immediately.")
+        insights.append("🚨 You have crossed your safe spending amount. Your savings may be affected.")
 
     return insights
 
@@ -85,7 +87,8 @@ def reset_all_data():
     st.session_state.transactions = pd.DataFrame(
         columns=["Date", "Category", "Description", "Amount"]
     )
-    st.session_state.monthly_budget = 10000.0
+    st.session_state.total_balance = 20000.0
+    st.session_state.savings_target = 5000.0
 
 
 # -----------------------------
@@ -94,21 +97,25 @@ def reset_all_data():
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["Dashboard", "Add Expense", "AI Insights", "Budget Planner", "Transaction History"]
+    ["Dashboard", "Add Expense", "AI Insights", "Balance Planner", "Transaction History"]
 )
 
 # -----------------------------
 # Title
 # -----------------------------
 st.title("AI Personal Finance Advisor (Student Version)")
-st.write("Track expenses, manage budget, and get AI-based insights on your spending.")
+st.write("Track expenses, protect savings, and manage your money smarter.")
 
 # -----------------------------
 # Common summary data
 # -----------------------------
 transactions_df = st.session_state.transactions
-monthly_budget = st.session_state.monthly_budget
-total_expense, savings, balance = calculate_summary(transactions_df, monthly_budget)
+total_balance = st.session_state.total_balance
+savings_target = st.session_state.savings_target
+
+total_expense, available_for_spending, current_balance, remaining_spending_money = calculate_summary(
+    transactions_df, total_balance, savings_target
+)
 
 # -----------------------------
 # Dashboard
@@ -116,13 +123,15 @@ total_expense, savings, balance = calculate_summary(transactions_df, monthly_bud
 if page == "Dashboard":
     st.subheader("Financial Dashboard")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Expenses", f"₹{total_expense:.2f}")
-    c2.metric("Savings", f"₹{savings:.2f}")
-    c3.metric("Balance", f"₹{balance:.2f}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Balance", f"₹{total_balance:.2f}")
+    c2.metric("Savings Kept Aside", f"₹{savings_target:.2f}")
+    c3.metric("Total Expenses", f"₹{total_expense:.2f}")
+    c4.metric("Current Balance", f"₹{current_balance:.2f}")
 
-    st.write("### Quick Summary")
-    st.write(f"**Monthly Budget:** ₹{monthly_budget:.2f}")
+    st.write("### Spending Summary")
+    st.write(f"**Available for Spending:** ₹{available_for_spending:.2f}")
+    st.write(f"**Remaining Spending Money:** ₹{remaining_spending_money:.2f}")
 
     if transactions_df.empty:
         st.info("No expense data available yet. Add expenses to view charts.")
@@ -186,10 +195,11 @@ elif page == "Add Expense":
                 st.success("Expense added successfully.")
 
     st.write("### Current Summary")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Expenses", f"₹{total_expense:.2f}")
-    c2.metric("Savings", f"₹{savings:.2f}")
-    c3.metric("Balance", f"₹{balance:.2f}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Balance", f"₹{total_balance:.2f}")
+    c2.metric("Savings", f"₹{savings_target:.2f}")
+    c3.metric("Expenses", f"₹{total_expense:.2f}")
+    c4.metric("Remaining Spending", f"₹{remaining_spending_money:.2f}")
 
 # -----------------------------
 # AI Insights
@@ -197,7 +207,7 @@ elif page == "Add Expense":
 elif page == "AI Insights":
     st.subheader("AI Insights & Recommendations")
 
-    insights = generate_ai_insights(transactions_df, monthly_budget)
+    insights = generate_ai_insights(transactions_df, total_balance, savings_target)
 
     for insight in insights:
         st.write(f"- {insight}")
@@ -208,39 +218,53 @@ elif page == "AI Insights":
         st.dataframe(category_totals, use_container_width=True)
 
 # -----------------------------
-# Budget Planner
+# Balance Planner
 # -----------------------------
-elif page == "Budget Planner":
-    st.subheader("Monthly Budget Planner")
+elif page == "Balance Planner":
+    st.subheader("Balance & Savings Planner")
 
-    new_budget = st.number_input(
-        "Set Monthly Budget (₹)",
+    new_balance = st.number_input(
+        "Enter Total Balance (₹)",
         min_value=0.0,
-        value=float(st.session_state.monthly_budget),
+        value=float(st.session_state.total_balance),
         step=500.0
     )
 
-    if st.button("Update Budget"):
-        st.session_state.monthly_budget = new_budget
-        st.success("Monthly budget updated successfully.")
+    new_savings = st.number_input(
+        "Enter Savings Amount to Keep Aside (₹)",
+        min_value=0.0,
+        value=float(st.session_state.savings_target),
+        step=500.0
+    )
 
+    if new_savings > new_balance:
+        st.error("Savings amount cannot be greater than total balance.")
+    else:
+        if st.button("Update Balance and Savings"):
+            st.session_state.total_balance = new_balance
+            st.session_state.savings_target = new_savings
+            st.success("Balance and savings updated successfully.")
+
+    spending_limit = st.session_state.total_balance - st.session_state.savings_target
     used_percent = 0
-    if st.session_state.monthly_budget > 0:
-        used_percent = min(total_expense / st.session_state.monthly_budget, 1.0)
+    if spending_limit > 0:
+        used_percent = min(total_expense / spending_limit, 1.0)
 
-    st.write(f"**Budget Used:** {used_percent * 100:.1f}%")
+    st.write(f"**Total Balance:** ₹{st.session_state.total_balance:.2f}")
+    st.write(f"**Savings Protected:** ₹{st.session_state.savings_target:.2f}")
+    st.write(f"**Available for Spending:** ₹{spending_limit:.2f}")
+    st.write(f"**Expenses So Far:** ₹{total_expense:.2f}")
+    st.write(f"**Remaining for Spending:** ₹{remaining_spending_money:.2f}")
+
+    st.write(f"**Spending Used:** {used_percent * 100:.1f}%")
     st.progress(used_percent)
 
-    if total_expense > st.session_state.monthly_budget:
-        st.error("You have exceeded your budget.")
-    elif total_expense > 0.8 * st.session_state.monthly_budget:
-        st.warning("You are nearing your budget limit.")
+    if total_expense > spending_limit:
+        st.error("You have spent beyond the allowed spending amount.")
+    elif total_expense > 0.8 * spending_limit:
+        st.warning("You are nearing your safe spending limit.")
     else:
-        st.success("Your spending is within budget.")
-
-    st.write(f"**Current Budget:** ₹{st.session_state.monthly_budget:.2f}")
-    st.write(f"**Total Expenses:** ₹{total_expense:.2f}")
-    st.write(f"**Remaining Balance:** ₹{balance:.2f}")
+        st.success("Your spending is within the safe limit.")
 
 # -----------------------------
 # Transaction History
@@ -282,6 +306,6 @@ confirm_reset = st.checkbox("I understand this will delete all current expense d
 if st.button("Reset All Data"):
     if confirm_reset:
         reset_all_data()
-        st.success("All expenses, savings, and balance data have been reset.")
+        st.success("All balance, savings, and expense data have been reset.")
     else:
         st.warning("Please confirm before resetting.")
